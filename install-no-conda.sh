@@ -271,7 +271,7 @@ fi
 
 if [ "$DOWNLOAD_UVR5" = "true" ]; then
     if find -L "tools/uvr5/uvr5_weights" -mindepth 1 ! -name '.gitignore' | grep -q .; then
-        echo -e"${INFO}UVR5 Models Exists"
+        echo -e "${INFO}UVR5 Models Exists"
         echo -e "${INFO}Skip Downloading UVR5 Models"
     else
         echo -e "${INFO}Downloading UVR5 Models..."
