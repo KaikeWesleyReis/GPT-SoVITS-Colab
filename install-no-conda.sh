@@ -352,7 +352,7 @@ PYOPENJTALK_PREFIX=$(python -c "import os, pyopenjtalk; print(os.path.dirname(py
 echo -e "${INFO}Downloading NLTK Data..."
 rm -rf nltk_data.zip
 run_wget_quiet "$NLTK_URL" -O nltk_data.zip
-unzip -q -o nltk_data -d "$PY_PREFIX"
+unzip -q -o nltk_data.zip -d "$PY_PREFIX"
 rm -rf nltk_data.zip
 echo -e "${SUCCESS}NLTK Data Downloaded"
 
