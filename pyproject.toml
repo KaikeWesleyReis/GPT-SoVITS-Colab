@@ -1,0 +1,27 @@
+[project]
+name = "gpt-sovits-colab"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "einops>=0.8.2",
+    "g2p-en>=2.1.0",
+    "inflect>=7.5.0",
+    "librosa>=0.10.2",
+    "matplotlib>=3.11.0",
+    "nltk>=3.9.4",
+    "numba>=0.60",
+    "numpy>=2.0",
+    "packaging>=26.2",
+    "pytorch-lightning>=2.6.5",
+    "torch>=2.5.1",
+    "torchaudio>=2.11.0",
+    "torchmetrics>=1.5.0",
+    "tqdm>=4.68.3",
+    "transformers>=4.50.0",
+    "wordsegment>=1.3.1",
+    "x-transformers>=2.22.6",
+]
+
+[tool.uv]
+no-binary-package = ["opencc"]
