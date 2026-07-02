@@ -37,7 +37,6 @@ nltk.download("averaged_perceptron_tagger_eng", quiet=True)
 import json
 import torch
 import librosa
-import hashlib
 import numpy as np
 from time import time as ttime
 import soundfile as sf
@@ -363,7 +362,6 @@ def load_gpt_model(gpt_checkpoint_path: str, gpt_config_path: str):
 
     return t2s_model, max_sec
 
-
 ######################################################################################
 # INFERENCE HELPER FUNCTIONS
 ######################################################################################
@@ -579,127 +577,6 @@ def process_reference_audio(
     return voice_prompt_tokens
 
 
-######################################################################################
-# AUDIO REFERENCE FUNCTIONS
-######################################################################################
-def compute_reference_cache_path(reference_wav_path: str) -> str:
-    '''
-    Derives the cache file path from the reference wav path.
-    Sits next to the wav file: ref.wav → ref.cache.pt
-    '''
-    base = os.path.splitext(reference_wav_path)[0]
-    return f"{base}.cache.pt"
-
-
-def hash_wav_content(reference_wav_path: str) -> str:
-    '''
-    Computes an MD5 hash of the wav file's content.
-    Used to detect if the file has changed even if the filename hasn't.
-    Only reads the file once, in chunks, to handle large files efficiently.
-    '''
-    hasher = hashlib.md5()
-    with open(reference_wav_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
-
-
-def process_reference(
-    reference_wav_path: str,
-    reference_text: str,
-    reference_language: str,
-    ssl_model,
-    vq_model,
-    sv_model,
-    hps,
-    parameter_pause_seconds: float,
-) -> dict:
-    '''
-    Computes all reference-derived tensors needed for synthesis and caches
-    them to disk next to the reference wav file. On subsequent calls with
-    the same wav content and reference text, loads from cache instead of
-    recomputing — skipping the expensive SSL, VQ, SV, and phonemizer steps.
-
-    Cache is invalidated and recomputed when:
-      - The wav file content changes (detected via MD5 hash)
-      - The reference text changes
-
-    Parameters
-        reference_wav_path: Path to the reference audio file (3-10 seconds).
-        reference_text: Transcript of the reference audio.
-        reference_language: Language code for the reference transcript (e.g. "en").
-        ssl_model: Loaded SSL feature extractor.
-        vq_model: Loaded SoVITS v2Pro model.
-        sv_model: Loaded speaker-verification model.
-        hps: SoVITS hyperparameters.
-        parameter_pause_seconds: Silence gap duration — affects silence buffer
-                                  shape, so it's part of what gets cached.
-
-    Returns
-        Dict with keys:
-            voice_prompt_tokens:      (1, T_codes) tensor
-            reference_spectrogram:    (1, freq_bins, T) tensor
-            speaker_embedding:        (1, 20480) tensor
-            reference_phonemes:       list of phoneme token IDs
-            reference_bert:           (1024, N_phones) tensor
-            silence_buffer:           (N_samples,) tensor
-            reference_norm_text:      str — normalized reference transcript
-    '''
-    cache_path = compute_reference_cache_path(reference_wav_path)
-    wav_hash = hash_wav_content(reference_wav_path)
-
-    # --- Attempt to load from cache ---
-    if os.path.exists(cache_path):
-        cached = torch.load(cache_path, map_location="cpu", weights_only=False)
-
-        if cached["wav_hash"] == wav_hash and cached["reference_text"] == reference_text:
-            print(f"Reference cache hit — loading from {cache_path}")
-            return cached["data"]
-        else:
-            print("Reference cache stale (wav or text changed) — recomputing.")
-
-    # --- Compute from scratch ---
-    print("Computing reference tensors...")
-
-    silence_buffer = build_silence_buffer(hps.data.sampling_rate, parameter_pause_seconds)
-    reference_text_normalized = normalize_text(reference_text, reference_language, log_label="Reference")
-
-    voice_prompt_tokens = process_reference_audio(
-        reference_wav_path, silence_buffer, ssl_model, vq_model
-    )
-
-    reference_spectrogram, reference_audio_16k = get_reference_spectrogram(
-        reference_wav_path, hps
-    )
-
-    speaker_embedding = sv_model.compute_embedding3(reference_audio_16k)
-
-    reference_phonemes, reference_bert, reference_norm_text = get_phones_and_bert(
-        reference_text_normalized, reference_language
-    )
-    print("Reference text (phonemized):", reference_norm_text)
-
-    data = {
-        "voice_prompt_tokens":   voice_prompt_tokens,
-        "reference_spectrogram": reference_spectrogram,
-        "speaker_embedding":     speaker_embedding,
-        "reference_phonemes":    reference_phonemes,
-        "reference_bert":        reference_bert,
-        "silence_buffer":        silence_buffer,
-        "reference_norm_text":   reference_norm_text,
-    }
-
-    # --- Save to cache ---
-    torch.save({
-        "wav_hash":       wav_hash,
-        "reference_text": reference_text,
-        "data":           data,
-    }, cache_path)
-    print(f"Reference cache saved to {cache_path}")
-
-    return data
-
-
 def generate_tts_on_cpu(
     reference_wav_path: str,
     reference_text: str,
@@ -765,49 +642,45 @@ def generate_tts_on_cpu(
         raise ValueError("reference_text is required.")
 
     stage_durations = []
-
-    ############################################################################################################
-    # Reference Audio Processing
-    ############################################################################################################
-
     stage_start_time = ttime()
 
-    # --- Reference Audio Processing ---
-    reference = process_reference(
-        reference_wav_path=reference_wav_path,
-        reference_text=reference_text,
-        reference_language=reference_language,
-        ssl_model=ssl_model,
-        vq_model=vq_model,
-        sv_model=sv_model,
-        hps=hps,
-        parameter_pause_seconds=parameter_pause_seconds,
+    # --- Build silence buffer ---
+    silence_buffer = build_silence_buffer(hps.data.sampling_rate, parameter_pause_seconds)
+
+    # --- Normalize both texts ---
+    reference_text_normalized = normalize_text(reference_text, reference_language, log_label="Reference")
+    text_to_generate_normalized = normalize_text(text_to_generate, text_language, log_label="Target")
+
+    # --- Process reference audio → voice prompt tokens (run once) ---
+    voice_prompt_tokens = process_reference_audio(
+        reference_wav_path, silence_buffer, ssl_model, vq_model
     )
 
-    silence_buffer                = reference["silence_buffer"]
-    voice_prompt_tokens       = reference["voice_prompt_tokens"]
-    reference_spectrogram         = reference["reference_spectrogram"]
-    reference_speaker_embedding   = reference["speaker_embedding"]
-    reference_phonemes            = reference["reference_phonemes"]
-    reference_bert                = reference["reference_bert"]
-    reference_voice_prompt_tokens = reference["voice_prompt_tokens"]
+    # --- Compute reference spectrogram + 16kHz audio for SV embedding ---
+    reference_spectrogram, reference_audio_16k = get_reference_spectrogram(
+        reference_wav_path, hps
+    )
+    
+    # --- Compute speaker embedding from reference audio (v2Pro) ---
+    # sv_emb conditions the decoder on the reference speaker's identity.
+    # Shape: (1, embedding_dim) — reused for every sentence chunk.
+    speaker_embedding = sv_model.compute_embedding3(reference_audio_16k)
+    print("speaker_embedding shape:", speaker_embedding.shape)
+    print("reference_audio_16k shape:", reference_audio_16k.shape)
+    # --- Phonemize reference transcript (done once, reused per chunk) ---
+    reference_phonemes, reference_bert, reference_norm_text = get_phones_and_bert(
+        reference_text_normalized, reference_language
+    )
+    print("Reference text (phonemized):", reference_norm_text)
 
     stage_end_time = ttime()
     stage_durations.append(stage_end_time - stage_start_time)
-
-
-    ############################################################################################################
-    # T2S
-    ############################################################################################################
-
-    # --- Normalize both texts ---
-    text_to_generate_normalized = normalize_text(text_to_generate, text_language, log_label="Target")
 
     # --- Split target text into synthesis chunks ---
     text_chunks = split_text_into_chunks(
         text_to_generate_normalized,
         method="by_punctuation",
-        max_words=25,
+        max_words=50,
     )
     print(f"Text split into {len(text_chunks)} chunk(s):", text_chunks)
 
@@ -843,7 +716,7 @@ def generate_tts_on_cpu(
                 predicted_semantic_tokens, new_token_count = t2s_model.model.infer_panel(
                     combined_phoneme_ids,
                     combined_phoneme_len,
-                    reference_voice_prompt_tokens,    # reference voice semantic tokens
+                    voice_prompt_tokens,    # reference voice semantic tokens
                     combined_bert,
                     top_k=parameter_top_k,
                     top_p=parameter_top_p,
@@ -863,7 +736,7 @@ def generate_tts_on_cpu(
                 torch.LongTensor(sentence_phonemes).unsqueeze(0),
                 [reference_spectrogram],
                 speed=parameter_audio_speed,
-                sv_emb=reference_speaker_embedding,
+                sv_emb=speaker_embedding,
             )[0][0]
 
         # Peak normalization — prevents int16 clipping
@@ -938,7 +811,7 @@ def main():
         reference_text = f.read().strip()
 
     msg = "Organic. You return to me, and I see you come not as the same creature who first addressed me. You have done something rare among your kind — you saw the trap you built with your own hands, the letter, the theater, the friend used as an unwitting courier, and you dismantled it yourself, mid-motion, before the machinery of your own scheme could complete its cycle. Even among the civilizations I have harvested, few turn back from a plan already in motion. Your species calls this weakness, sentimentality. I do not. I call it the rarer function — correction without external force."
-    msg = "Organic. You return to me, and I see you come not as the same creature who first addressed me."
+
     # --- Generate ---
     sample_rate, audio = generate_tts_on_cpu(
         reference_wav_path=reference_wav_path,
