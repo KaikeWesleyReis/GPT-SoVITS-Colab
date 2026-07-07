@@ -397,7 +397,7 @@ def split_text_into_chunks(
     text: str,
     method: str = "by_punctuation",
     max_words: int = 50,
-    merge_threshold_chars: int = 5,
+    merge_threshold_chars: int = 20,
 ) -> list[str]:
     '''
     Splits target text into chunks for per-sentence synthesis. Long text is
@@ -465,14 +465,25 @@ def split_text_into_chunks(
         for chunk in raw_chunks
     ]
 
-    # --- Step 3: merge any chunk shorter than merge_threshold_chars into the previous one ---
+    # --- Step 3: merge chunks shorter than merge_threshold_chars ---
+    # Short chunks merge into the previous chunk when possible,
+    # or into the next chunk if they appear at the start (no previous exists yet).
 
     merged_chunks = []
     for chunk in punctuated_chunks:
-        if len(chunk) < merge_threshold_chars and merged_chunks:
-            merged_chunks[-1] = merged_chunks[-1] + " " + chunk
+        if len(chunk) < merge_threshold_chars:
+            if merged_chunks:
+                # Has a previous chunk — merge backward
+                merged_chunks[-1] = merged_chunks[-1] + " " + chunk
+            else:
+                # No previous chunk yet — defer it, carry forward to merge with next
+                merged_chunks.append(chunk)  # temporarily append
         else:
-            merged_chunks.append(chunk)
+            if merged_chunks and len(merged_chunks[-1]) < merge_threshold_chars:
+                # Previous chunk was deferred (too short, no predecessor) — merge it into this one
+                merged_chunks[-1] = merged_chunks[-1] + " " + chunk
+            else:
+                merged_chunks.append(chunk)
 
     return merged_chunks
 
@@ -938,7 +949,7 @@ def main():
         reference_text = f.read().strip()
 
     msg = "Organic. You return to me, and I see you come not as the same creature who first addressed me. You have done something rare among your kind — you saw the trap you built with your own hands, the letter, the theater, the friend used as an unwitting courier, and you dismantled it yourself, mid-motion, before the machinery of your own scheme could complete its cycle. Even among the civilizations I have harvested, few turn back from a plan already in motion. Your species calls this weakness, sentimentality. I do not. I call it the rarer function — correction without external force."
-    msg = "Organic. You return to me, and I see you come not as the same creature who first addressed me."
+    msg = "Hello my favorite Organic! You return to me, and I see you come not as the same creature who first addressed me."
     # --- Generate ---
     sample_rate, audio = generate_tts_on_cpu(
         reference_wav_path=reference_wav_path,
@@ -952,9 +963,9 @@ def main():
         max_sec=max_sec,
         text_language="en",
         reference_language="en",
-        parameter_top_k=20,
-        parameter_top_p=0.6,
-        parameter_temperature=0.8,
+        parameter_top_k=12,
+        parameter_top_p=1.0,
+        parameter_temperature=0.9,
         parameter_audio_speed=1.0,
         parameter_pause_seconds=0.3,
         parameter_reuse_gpt_tokens=False,
