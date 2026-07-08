@@ -43,7 +43,7 @@ from time import time as ttime
 import soundfile as sf
 import torchaudio
 
-
+torch.set_num_threads(4)
 
 # Project Packages
 from GPT_SoVITS.sv import SV

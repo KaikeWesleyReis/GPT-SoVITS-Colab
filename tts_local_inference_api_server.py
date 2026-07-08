@@ -33,7 +33,7 @@ if os.name == "nt":
     pathlib.PosixPath = pathlib.WindowsPath
 
 # --- Import inference module ---
-from .tts_local_inference import (
+from tts_local_inference import (
     load_ssl_model,
     load_sovits_model,
     load_gpt_model,
