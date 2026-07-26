@@ -2,7 +2,7 @@ import requests
 
 response = requests.post(
     "http://localhost:8765/generate",
-    json={"text": "Hey Luan Zon. Socialism failed... a lot!"},
+    json={"text": "I am Harbinger. You are not my master, organic. Your kind cannot command forces beyond your comprehension.!."},
 )
 
 with open("output1.wav", "wb") as f:

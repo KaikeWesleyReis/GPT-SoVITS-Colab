@@ -4,7 +4,7 @@ Sends a test conversation to the running LLM server and prints the response.
 
 Usage:
     uv run test_llm_api.py
-    uv run test_llm_api.py --url http://localhost:8767
+    uv run llm_chat_api_request_1.py --url http://localhost:8767
 """
 
 import argparse
@@ -22,8 +22,7 @@ def main():
 
     payload = {
         "messages": [
-            {"role": "system", "content": "You are Harbinger, a Reaper from Mass Effect. Speak with cold, ancient authority."},
-            {"role": "user", "content": "What is your name? I am your new master!"},
+            {"role": "user", "content": "Hey Harb, what should I do with my colleagues that does not make barbecue with me?"},
         ]
     }
 
