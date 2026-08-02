@@ -67,7 +67,6 @@ if user_input:
 
         # 4. Simulate the TTS "chunk" delay before revealing the answer
         thinking_placeholder.markdown("*I shall speak now...*")
-        time.sleep(7)
 
         # 5. Generate the full audio (single chunk — splitting is TTS's job later)
         audio_path = None
