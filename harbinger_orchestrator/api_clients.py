@@ -3,6 +3,7 @@ Harbinger E2E — API Clients
 Thin wrappers around the chat (LLM) and TTS HTTP services.
 """
 
+import io
 import time
 import uuid
 from pathlib import Path
@@ -11,6 +12,7 @@ import requests
 
 CHAT_API_URL = "http://localhost:8767"
 TTS_API_URL = "http://localhost:8765"
+STT_API_URL = "http://localhost:8766"
 
 AUDIO_STORE_DIR = Path(__file__).parent / "audio_store"
 
@@ -45,3 +47,15 @@ def generate_audio(text: str) -> str:
     file_path.write_bytes(response.content)
 
     return str(file_path)
+
+
+def transcribe_audio(wav_bytes: bytes) -> str:
+    """Send WAV audio bytes to the STT /transcribe API, return the transcribed text."""
+    files = {"audio": ("utterance.wav", io.BytesIO(wav_bytes), "audio/wav")}
+    response = requests.post(
+        f"{STT_API_URL}/transcribe",
+        files=files,
+        timeout=120,
+    )
+    response.raise_for_status()
+    return response.json()["text"]

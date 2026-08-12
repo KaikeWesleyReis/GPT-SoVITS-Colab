@@ -8,6 +8,8 @@ runtime
 output
 logs
 SoVITS_weights*/
+*audio_store/*
+*\\chat_data\\*
 GPT_weights*/
 TEMP
 weight.json
